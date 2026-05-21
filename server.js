@@ -8,11 +8,44 @@ const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 const supabase = require('./db');
-
+const rateLimit = require('express-rate-limit');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'conn-secret-key-change-in-production';
 
+
+//LOGIN limiter
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // max 5 attempts per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Too many login attempts. Please try again after 15 minutes.'
+  }
+});
+
+//REGISTER limiter
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Too many accounts created. Please try again later.'
+  }
+});
+
+//USERNAME CHECK limiter
+const usernameCheckLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Too many requests. Please slow down.'
+  }
+});
 
 // Middleware
 app.use(cors());
@@ -234,7 +267,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ──────────────────── AUTH ROUTES ────────────────────
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', registerLimiter, async (req, res) => {
   try {
     const { name, email, password, username } = req.body;
     if (!name || !email || !password) {
@@ -302,7 +335,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -353,7 +386,7 @@ app.get('/api/auth/check', (req, res) => {
 });
 
 // Check username availability
-app.get('/api/auth/check-username/:username', async (req, res) => {
+app.get('/api/auth/check-username/:username', usernameCheckLimiter, async (req, res) => {
   const username = req.params.username.toLowerCase().trim();
   if (!isUsernameValid(username)) {
     return res.json({ available: false, reason: 'Invalid format. Use 3-30 lowercase letters, numbers, and hyphens.' });
